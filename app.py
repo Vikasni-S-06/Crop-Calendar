@@ -3,14 +3,40 @@ import joblib, os, random, math
 import pandas as pd, numpy as np
 from datetime import date
 
+import requests
+import os
+
+# 🌤️ Function to fetch live weather data
+def get_live_weather(city):
+    api_key = os.getenv("OPENWEATHER_KEY", "97a7e1271940a389ebb19099dcd9fe9c")  # your API key
+    if not city:
+        return None
+    url = f"https://api.openweathermap.org/data/2.5/weather?q={city}&appid={api_key}&units=metric"
+    try:
+        resp = requests.get(url, timeout=5)
+        data = resp.json()
+        if "main" in data:
+            return {
+                "temperature": data["main"]["temp"],
+                "humidity": data["main"]["humidity"]
+            }
+    except Exception as e:
+        st.warning(f"Could not fetch live weather: {e}")
+    return None
+
 st.set_page_config(page_title="SmartCrop Advisor", layout="centered")
 st.title("🌾 SmartCrop Advisor — Demo")
 
-# load model & encoder
-MODEL = "/content/smartcrop/crop_model.pkl"
-ENC = "/content/smartcrop/label_encoder.pkl"
-clf = joblib.load(MODEL)
-le = joblib.load(ENC)
+# load model & encoder (relative paths for Streamlit deployment)
+MODEL = "crop_model.pkl"
+ENC = "label_encoder.pkl"
+
+if not os.path.exists(MODEL) or not os.path.exists(ENC):
+    st.error("❌ Model files not found! Please ensure 'crop_model.pkl' and 'label_encoder.pkl' are in your GitHub repo root.")
+else:
+    clf = joblib.load(MODEL)
+    le = joblib.load(ENC)
+
 
 # helpers (lighter versions)
 def recommend_topk_ui(N,P,K,temperature,humidity,ph,rainfall):
@@ -41,7 +67,7 @@ def get_pests_ui(crop, temp=None, hum=None):
     return res if res else ['No major pests detected.']
 
 def get_price_ui(crop, market_keyword=None):
-    file = "/content/smartcrop/market_standardized.csv"
+    file = "market_standardized.csv"
     if os.path.exists(file):
         try:
             mdf = pd.read_csv(file, low_memory=False)
@@ -75,6 +101,16 @@ with st.form("input"):
     submitted = st.form_submit_button("Get Recommendation")
 
 if submitted:
+        # 🌤️ Update temperature and humidity from OpenWeather (if city provided)
+    if city:
+        weather = get_live_weather(city)
+        if weather:
+            temp = weather["temperature"]
+            hum = weather["humidity"]
+            st.info(f"Live weather for {city}: 🌡️ {temp}°C, 💧 {hum}% humidity")
+        else:
+            st.warning("Could not fetch live weather data; using entered values.")
+
     top = recommend_topk_ui(N,P,K,temp,hum,ph,rainfall)
     st.subheader("Top crop recommendations")
     for crop,prob in top:
