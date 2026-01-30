@@ -20,6 +20,11 @@ ENCODER_PATH = "label_encoder.pkl"
 clf = joblib.load(MODEL_PATH)
 le = joblib.load(ENCODER_PATH)
 
+# ---------------- SESSION STATE ----------------
+if "lat" not in st.session_state:
+    st.session_state.lat = None
+    st.session_state.lon = None
+
 # ---------------- WEATHER FUNCTION ----------------
 def get_weather_from_coords(lat, lon):
     url = "https://api.openweathermap.org/data/2.5/weather"
@@ -29,7 +34,7 @@ def get_weather_from_coords(lat, lon):
         "appid": OPENWEATHER_API_KEY,
         "units": "metric"
     }
-    res = requests.get(url)
+    res = requests.get(url, params=params)
     if res.status_code == 200:
         data = res.json()
         temp = data["main"]["temp"]
@@ -40,42 +45,61 @@ def get_weather_from_coords(lat, lon):
     return None, None, None, None
 
 # ---------------- ML FUNCTIONS ----------------
-def recommend_crop(N,P,K,temp,hum,ph,rain):
-    X = np.array([[N,P,K,temp,hum,ph,rain]])
+def recommend_crop(N, P, K, temp, hum, ph, rain):
+    X = np.array([[N, P, K, temp, hum, ph, rain]])
     probs = clf.predict_proba(X)[0]
     top_idx = np.argsort(probs)[::-1][:3]
     return [(le.inverse_transform([i])[0], probs[i]) for i in top_idx]
 
 def soil_type(ph):
-    if ph < 5.5: return "Acidic"
-    if ph <= 7.5: return "Neutral"
+    if ph < 5.5:
+        return "Acidic"
+    if ph <= 7.5:
+        return "Neutral"
     return "Alkaline"
 
 def pest_alert(crop):
     pests = {
-        "rice":["Rice blast","Stem borer"],
-        "maize":["Fall armyworm"],
-        "wheat":["Rust","Aphids"],
-        "cotton":["Bollworm"],
-        "tomato":["Fruit borer"]
+        "rice": ["Rice blast", "Stem borer"],
+        "maize": ["Fall armyworm"],
+        "wheat": ["Rust", "Aphids"],
+        "cotton": ["Bollworm"],
+        "tomato": ["Fruit borer"]
     }
     return pests.get(crop.lower(), ["No major pests detected"])
 
 # ---------------- MAP UI ----------------
 st.subheader("📍 Select Location on Map")
 
-m = folium.Map(location=[20.5937, 78.9629], zoom_start=5)
+# Default map location
+map_center = [20.5937, 78.9629]
+
+m = folium.Map(location=map_center, zoom_start=5)
 m.add_child(folium.LatLngPopup())
 
-map_data = st_folium(m, height=400, width=700)
+# Add marker if location already selected
+if st.session_state.lat and st.session_state.lon:
+    folium.Marker(
+        [st.session_state.lat, st.session_state.lon],
+        tooltip="Selected Location",
+        icon=folium.Icon(color="red", icon="map-marker")
+    ).add_to(m)
+
+map_data = st_folium(m, height=420, width=700)
 
 temp = hum = rain = None
 
+# Capture clicked location
 if map_data and map_data.get("last_clicked"):
-    lat = map_data["last_clicked"]["lat"]
-    lon = map_data["last_clicked"]["lng"]
+    st.session_state.lat = map_data["last_clicked"]["lat"]
+    st.session_state.lon = map_data["last_clicked"]["lng"]
 
-    st.success(f"Latitude: {lat:.4f}, Longitude: {lon:.4f}")
+# Fetch weather if location exists
+if st.session_state.lat and st.session_state.lon:
+    lat = st.session_state.lat
+    lon = st.session_state.lon
+
+    st.success(f"📌 Latitude: {lat:.4f}, Longitude: {lon:.4f}")
 
     temp, hum, rain, location_name = get_weather_from_coords(lat, lon)
 
@@ -102,7 +126,7 @@ if submit:
     if temp is None:
         st.error("⚠️ Please pin a location on the map to fetch weather data.")
     else:
-        results = recommend_crop(N,P,K,temp,hum,ph,rain)
+        results = recommend_crop(N, P, K, temp, hum, ph, rain)
 
         st.subheader("🌾 Recommended Crops")
         for crop, prob in results:
@@ -115,10 +139,10 @@ if submit:
 
         st.subheader("🐛 Pest Alerts")
         for p in pest_alert(main_crop):
-            st.write("- " + p)
+            st.write("• " + p)
 
         st.subheader("💰 Market Price (Estimated)")
-        base = random.randint(1500,5000)
+        base = random.randint(1500, 5000)
         st.metric("Current Price (₹/quintal)", base)
         st.metric("Expected Price at Harvest (₹/quintal)", int(base * 1.15))
 
