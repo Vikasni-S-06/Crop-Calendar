@@ -1,4 +1,5 @@
 import streamlit as st
+import folium
 import requests
 import numpy as np
 import joblib
