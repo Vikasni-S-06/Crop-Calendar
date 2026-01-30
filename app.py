@@ -1,138 +1,125 @@
 import streamlit as st
-import joblib, os, random, math
-import pandas as pd, numpy as np
-from datetime import date
-
+import folium
+from streamlit_folium import st_folium
 import requests
-import os
+import numpy as np
+import joblib
+import random
 
-# 🌤️ Function to fetch live weather data
-def get_live_weather(city):
-    api_key = os.getenv("OPENWEATHER_KEY", "97a7e1271940a389ebb19099dcd9fe9c")  # your API key
-    if not city:
-        return None
-    url = f"https://api.openweathermap.org/data/2.5/weather?q={city}&appid={api_key}&units=metric"
-    try:
-        resp = requests.get(url, timeout=5)
-        data = resp.json()
-        if "main" in data:
-            return {
-                "temperature": data["main"]["temp"],
-                "humidity": data["main"]["humidity"]
-            }
-    except Exception as e:
-        st.warning(f"Could not fetch live weather: {e}")
-    return None
-
+# ---------------- PAGE CONFIG ----------------
 st.set_page_config(page_title="SmartCrop Advisor", layout="centered")
-st.title("🌾 SmartCrop Advisor — Demo")
+st.title("🌾 SmartCrop Advisor")
 
-# load model & encoder (relative paths for Streamlit deployment)
-MODEL = "crop_model.pkl"
-ENC = "label_encoder.pkl"
+# ---------------- API KEY ----------------
+OPENWEATHER_API_KEY = "97a7e1271940a389ebb19099dcd9fe9c"
 
-if not os.path.exists(MODEL) or not os.path.exists(ENC):
-    st.error("❌ Model files not found! Please ensure 'crop_model.pkl' and 'label_encoder.pkl' are in your GitHub repo root.")
-else:
-    clf = joblib.load(MODEL)
-    le = joblib.load(ENC)
+# ---------------- LOAD MODEL ----------------
+MODEL_PATH = "crop_model.pkl"
+ENCODER_PATH = "label_encoder.pkl"
 
+clf = joblib.load(MODEL_PATH)
+le = joblib.load(ENCODER_PATH)
 
-# helpers (lighter versions)
-def recommend_topk_ui(N,P,K,temperature,humidity,ph,rainfall):
-    X = np.array([[N,P,K,temperature,humidity,ph,rainfall]])
-    if hasattr(clf, "predict_proba"):
-        probs = clf.predict_proba(X)[0]
-        top_idx = np.argsort(probs)[::-1][:3]
-        return [(le.inverse_transform([i])[0], float(probs[i])) for i in top_idx]
-    else:
-        p = clf.predict(X)[0]
-        return [(le.inverse_transform([p])[0], None)]
+# ---------------- WEATHER FUNCTION ----------------
+def get_weather_from_coords(lat, lon):
+    url = "https://api.openweathermap.org/data/2.5/weather"
+    params = {
+        "lat": lat,
+        "lon": lon,
+        "appid": OPENWEATHER_API_KEY,
+        "units": "metric"
+    }
+    res = requests.get(url)
+    if res.status_code == 200:
+        data = res.json()
+        temp = data["main"]["temp"]
+        hum = data["main"]["humidity"]
+        rain = data.get("rain", {}).get("1h", 0.0)
+        place = data.get("name", "Pinned Location")
+        return temp, hum, rain, place
+    return None, None, None, None
 
-def soil_from_ph(ph):
-    try: phv=float(ph)
-    except: return "Unknown"
-    if phv<5.5: return "Acidic"
-    if phv<=7.5: return "Neutral"
+# ---------------- ML FUNCTIONS ----------------
+def recommend_crop(N,P,K,temp,hum,ph,rain):
+    X = np.array([[N,P,K,temp,hum,ph,rain]])
+    probs = clf.predict_proba(X)[0]
+    top_idx = np.argsort(probs)[::-1][:3]
+    return [(le.inverse_transform([i])[0], probs[i]) for i in top_idx]
+
+def soil_type(ph):
+    if ph < 5.5: return "Acidic"
+    if ph <= 7.5: return "Neutral"
     return "Alkaline"
 
-def get_pests_ui(crop, temp=None, hum=None):
-    pest_map = {'rice':['rice blast','stem borer'],'maize':['fall armyworm'],'wheat':['rust','aphids'],'cotton':['bollworm']}
-    res = pest_map.get(str(crop).lower(), [])
-    try:
-        if hum and temp and hum>80 and temp>20:
-            res = res + ['High fungal risk (humid & warm)']
-    except:
-        pass
-    return res if res else ['No major pests detected.']
+def pest_alert(crop):
+    pests = {
+        "rice":["Rice blast","Stem borer"],
+        "maize":["Fall armyworm"],
+        "wheat":["Rust","Aphids"],
+        "cotton":["Bollworm"],
+        "tomato":["Fruit borer"]
+    }
+    return pests.get(crop.lower(), ["No major pests detected"])
 
-def get_price_ui(crop, market_keyword=None):
-    file = "market_standardized.csv"
-    if os.path.exists(file):
-        try:
-            mdf = pd.read_csv(file, low_memory=False)
-            mdf.columns = [c.strip().lower().replace(" ","_") for c in mdf.columns]
-            comm = next((c for c in mdf.columns if 'commodity' in c or 'crop' in c), None)
-            price_col = next((c for c in mdf.columns if 'modal' in c or 'price' in c), None)
-            if comm and price_col:
-                mdf[comm] = mdf[comm].astype(str).str.lower()
-                sel = mdf[mdf[comm].str.contains(str(crop).lower(), na=False)]
-                if not sel.empty:
-                    vals = pd.to_numeric(sel[price_col], errors='coerce').dropna()
-                    if not vals.empty:
-                        return float(vals.median())
-        except:
-            pass
-    return None
+# ---------------- MAP UI ----------------
+st.subheader("📍 Select Location on Map")
 
-with st.form("input"):
-    c1,c2 = st.columns(2)
-    with c1:
-        city = st.text_input("Nearest city/market (optional)", "")
-        N = st.number_input("Nitrogen (N)", 0, 200, 50)
-        P = st.number_input("Phosphorus (P)", 0, 200, 30)
-        K = st.number_input("Potassium (K)", 0, 300, 20)
-        ph = st.number_input("Soil pH", 0.0, 14.0, 6.5, step=0.1)
-    with c2:
-        temp = st.number_input("Temperature (°C)", -10.0, 60.0, 25.0, step=0.5)
-        hum = st.number_input("Humidity (%)", 0.0, 100.0, 70.0, step=1.0)
-        rainfall = st.number_input("Recent Rainfall (mm)", 0, 500, 100)
-        days = st.number_input("Days until harvest (approx)", 30, 365, 90)
-    submitted = st.form_submit_button("Get Recommendation")
+m = folium.Map(location=[20.5937, 78.9629], zoom_start=5)
+m.add_child(folium.LatLngPopup())
 
-if submitted:
-        # 🌤️ Update temperature and humidity from OpenWeather (if city provided)
-    if city:
-        weather = get_live_weather(city)
-        if weather:
-            temp = weather["temperature"]
-            hum = weather["humidity"]
-            st.info(f"Live weather for {city}: 🌡️ {temp}°C, 💧 {hum}% humidity")
-        else:
-            st.warning("Could not fetch live weather data; using entered values.")
+map_data = st_folium(m, height=400, width=700)
 
-    top = recommend_topk_ui(N,P,K,temp,hum,ph,rainfall)
-    st.subheader("Top crop recommendations")
-    for crop,prob in top:
-        if prob is not None:
-            st.write(f"- **{crop}** (confidence {prob:.2f})")
-        else:
-            st.write(f"- **{crop}**")
-    st.subheader("Soil type")
-    st.write(soil_from_ph(ph))
-    st.subheader("Pest alerts")
-    pests = get_pests_ui(top[0][0], temp=temp, hum=hum)
-    for pe in pests:
-        st.write("- " + str(pe))
-    st.subheader("Market price (approx)")
-    price = get_price_ui(top[0][0], market_keyword=city)
-    if price is not None:
-        st.metric("Current price (₹/quintal)", f"₹{int(price)}")
-        st.metric("Expected price at harvest (approx)", f"₹{int(price * (1 + 0.05 + random.random()*0.15))}")
+temp = hum = rain = None
+
+if map_data and map_data.get("last_clicked"):
+    lat = map_data["last_clicked"]["lat"]
+    lon = map_data["last_clicked"]["lng"]
+
+    st.success(f"Latitude: {lat:.4f}, Longitude: {lon:.4f}")
+
+    temp, hum, rain, location_name = get_weather_from_coords(lat, lon)
+
+    if temp is not None:
+        c1, c2, c3 = st.columns(3)
+        c1.metric("🌡 Temperature (°C)", temp)
+        c2.metric("💧 Humidity (%)", hum)
+        c3.metric("🌧 Rainfall (mm)", rain)
+        st.caption(f"Detected location: {location_name}")
+
+# ---------------- SOIL INPUT FORM ----------------
+st.subheader("🌱 Soil Parameters")
+
+with st.form("soil_form"):
+    N = st.number_input("Nitrogen (N)", 0, 200, 50)
+    P = st.number_input("Phosphorus (P)", 0, 200, 30)
+    K = st.number_input("Potassium (K)", 0, 300, 20)
+    ph = st.number_input("Soil pH", 0.0, 14.0, 6.5)
+
+    submit = st.form_submit_button("Get Crop Recommendation")
+
+# ---------------- OUTPUT ----------------
+if submit:
+    if temp is None:
+        st.error("⚠️ Please pin a location on the map to fetch weather data.")
     else:
-        base = random.randint(1500,5000)
-        st.write("No exact market record found — showing simulated price.")
-        st.metric("Current price (simulated ₹/quintal)", f"₹{base}")
-        st.metric("Expected price at harvest (simulated ₹/quintal)", f"₹{int(base * (1 + 0.05 + random.random()*0.15))}")
+        results = recommend_crop(N,P,K,temp,hum,ph,rain)
 
-st.caption("Demo app: model trained on uploaded Crop_recommendation.csv. Replace market file for live prices.")
+        st.subheader("🌾 Recommended Crops")
+        for crop, prob in results:
+            st.write(f"• **{crop}** (confidence {prob:.2f})")
+
+        main_crop = results[0][0]
+
+        st.subheader("🧪 Soil Type")
+        st.write(soil_type(ph))
+
+        st.subheader("🐛 Pest Alerts")
+        for p in pest_alert(main_crop):
+            st.write("- " + p)
+
+        st.subheader("💰 Market Price (Estimated)")
+        base = random.randint(1500,5000)
+        st.metric("Current Price (₹/quintal)", base)
+        st.metric("Expected Price at Harvest (₹/quintal)", int(base * 1.15))
+
+st.caption("Phase-2 Enhancement: Map-based automatic weather input using OpenWeather API")
