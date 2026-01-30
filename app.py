@@ -39,7 +39,8 @@ def get_weather_from_coords(lat, lon):
         data = res.json()
         temp = data["main"]["temp"]
         hum = data["main"]["humidity"]
-        rain = data.get("rain", {}).get("1h", 0.0)
+        rain = data.get("rain", {}).get("1h",
+               data.get("rain", {}).get("3h", 0.0))
         place = data.get("name", "Pinned Location")
         return temp, hum, rain, place
     return None, None, None, None
