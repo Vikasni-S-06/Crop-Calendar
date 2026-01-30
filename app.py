@@ -34,7 +34,7 @@ def get_weather_from_coords(lat, lon):
         "appid": OPENWEATHER_API_KEY,
         "units": "metric"
     }
-    res = requests.get(url, params=params)
+    res = requests.get(url, params=params)  # <-- MUST pass params
     if res.status_code == 200:
         data = res.json()
         temp = data["main"]["temp"]
@@ -43,7 +43,9 @@ def get_weather_from_coords(lat, lon):
                data.get("rain", {}).get("3h", 0.0))
         place = data.get("name", "Pinned Location")
         return temp, hum, rain, place
-    return None, None, None, None
+    else:
+        st.error(f"Weather API error: {res.status_code}")
+        return None, None, None, None
 
 # ---------------- ML FUNCTIONS ----------------
 def recommend_crop(N, P, K, temp, hum, ph, rain):
@@ -72,11 +74,8 @@ def pest_alert(crop):
 # ---------------- MAP UI ----------------
 st.subheader("📍 Select Location on Map")
 
-# Default map location
-map_center = [20.5937, 78.9629]
-
+map_center = [20.5937, 78.9629]  # India
 m = folium.Map(location=map_center, zoom_start=5)
-m.add_child(folium.LatLngPopup())
 
 # Add marker if location already selected
 if st.session_state.lat and st.session_state.lon:
@@ -86,16 +85,16 @@ if st.session_state.lat and st.session_state.lon:
         icon=folium.Icon(color="red", icon="map-marker")
     ).add_to(m)
 
+m.add_child(folium.LatLngPopup())
+
 map_data = st_folium(m, height=420, width=700)
 
+# ---------------- FETCH WEATHER ----------------
 temp = hum = rain = None
-
-# Capture clicked location
 if map_data and map_data.get("last_clicked"):
     st.session_state.lat = map_data["last_clicked"]["lat"]
     st.session_state.lon = map_data["last_clicked"]["lng"]
 
-# Fetch weather if location exists
 if st.session_state.lat and st.session_state.lon:
     lat = st.session_state.lat
     lon = st.session_state.lon
