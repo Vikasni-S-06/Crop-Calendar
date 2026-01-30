@@ -94,14 +94,17 @@ map_data = st_folium(m, height=420, width=700)
 # ---------------- FETCH WEATHER ----------------
 temp = hum = rain = None
 if map_data and map_data.get("last_clicked"):
-    st.session_state.lat = map_data["last_clicked"]["lat"]
-    st.session_state.lon = map_data["last_clicked"]["lng"]
+    lat = map_data["last_clicked"]["lat"]
+    lon = map_data["last_clicked"]["lng"]
 
-if st.session_state.lat and st.session_state.lon:
-    lat = st.session_state.lat
-    lon = st.session_state.lon
+    st.session_state.lat = lat
+    st.session_state.lon = lon
+
+    # get weather for this location
+    st.session_state.temp, st.session_state.hum, st.session_state.rain, st.session_state.location_name = get_weather_from_coords(lat, lon)
 
     st.success(f"📌 Latitude: {lat:.4f}, Longitude: {lon:.4f}")
+
 
     temp, hum, rain, location_name = get_weather_from_coords(lat, lon)
 
@@ -128,7 +131,7 @@ if submit:
     if temp is None:
         st.error("⚠️ Please pin a location on the map to fetch weather data.")
     else:
-        results = recommend_crop(N, P, K, temp, hum, ph, rain)
+        results = recommend_crop(N,P,K,st.session_state.temp,st.session_state.hum,ph,st.session_state.rain)
 
         st.subheader("🌾 Recommended Crops")
         for crop, prob in results:
