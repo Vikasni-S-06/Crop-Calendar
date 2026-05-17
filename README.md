@@ -34,8 +34,12 @@ Soil pH
 Temperature
 Humidity
 Rainfall
-Model Serialization: Joblib
+
+Model Serialization: 
+
 Output: Top 3 recommended crops with confidence probabilities
+
+
 🏗️ System Architecture
 User
  ↓
@@ -48,6 +52,8 @@ OpenWeather API (Live Weather)
 ML Model Prediction
  ↓
 Crop Recommendation Output
+
+
 🧰 Technology Stack
 Component	Technology
 Frontend	Streamlit
@@ -57,6 +63,8 @@ Model Storage	Joblib
 Weather API	OpenWeather
 Deployment	Streamlit Cloud
 Programming Language	Python
+
+
 📂 Project Structure
 SmartCrop-Advisor/
 │
@@ -65,14 +73,21 @@ SmartCrop-Advisor/
 ├── requirements.txt        # Dependencies
 ├── README.md               # Project documentation
 └── data/                   # Dataset (if applicable)
+
+
 ⚙️ Installation & Local Setup
+
 1️⃣ Clone the Repository
 git clone (https://github.com/Vikasni-S-06/Crop-Calendar).git
 cd smartcrop-advisor
+
 2️⃣ Install Dependencies
 pip install -r requirements.txt
+
 3️⃣ Run the Streamlit App
 streamlit run app.py
+
+
 🔐 API Key Configuration (Important)
 
 This project uses OpenWeather API.
@@ -94,6 +109,8 @@ The application is deployed using Streamlit Cloud, providing:
 Browser-based access
 No local setup for end users
 Secure environment variable handling
+
+
 🧪 Error Handling
 
 The application gracefully handles:
