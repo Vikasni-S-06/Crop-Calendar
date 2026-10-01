@@ -9,7 +9,7 @@ The system uses machine learning, map-based location selection, and live weather
 
 The application is developed using Streamlit and deployed on Streamlit Cloud for easy accessibility.
 
-🚀 Live Application
+🚀 Live Application Below
 
 🔗 Streamlit App Link:
 👉 https://smartcrop-project.streamlit.app/
